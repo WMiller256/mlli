@@ -32,9 +32,12 @@ static std::vector<int> b = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 										0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
 										0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-void print_percent(int current, int total) {
+void print_percent(size_t current, size_t &previous, size_t total) {
+    if ((current - previous) / (double) total < 0.01) return;
+    else previous = current;
+    
 	double percent = ((double)current/(double)(total - 1))*100.0;
-	int idx = (int)percent - 1 >= 0 ? (int)percent : 0;
+	int idx = (unsigned int)percent - 1 >= 0 ? (unsigned int)percent : 0;
 	if (total == 1 || current > total || percent > 100) return;
 
 	std::string p = std::to_string(int(percent));

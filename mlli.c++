@@ -110,15 +110,20 @@ std::vector<cv::Mat> extract_frames(const std::string &video) {
                    
     struct SwsContext *img_convert_ctx;
     size_t nframes = informat_ctx->streams[video_stream]->nb_frames;
-    frames.reserve(nframes);
+    frames.reserve(nframes);    // Minimize memcpy
+    
     size_t current(0);
+    size_t previous(0);
+
+    // Packet initialization
+    AVPacket pkt;
+    av_init_packet(&pkt);
+
+    // Parsing loop
     while (ret == 0) {
-        // Packet initialization
-        AVPacket pkt;
-        av_init_packet(&pkt);
 
         // Print progress
-        print_percent(current++, nframes);
+        print_percent(current++, previous, nframes);
 
         ret = av_read_frame(informat_ctx, &pkt);                     // Read the next frame in
         avcodec_decode_video2(inav_ctx, frame, &valid_frame, &pkt);  // Decode the next frame
@@ -131,15 +136,18 @@ std::vector<cv::Mat> extract_frames(const std::string &video) {
             sws_scale(img_convert_ctx, decframe->data, decframe->linesize, 0, decframe->height, frame->data, frame->linesize);
             sws_freeContext(img_convert_ctx);
 
-            cv::Mat _frame(frame->height, frame->width, CV_64FC3, framebuf.data());
+            cv::Mat _frame(frame->height, frame->width, CV_64FC3, framebuf.data(), 24);
             frames.push_back(_frame);                                // And add it to the output vector
         }
 
         // DEBUG
-        if (current > 1000) break;
+//        if (current > 1000) break;
     }
     std::cout << std::endl;
     ret = avcodec_close(inav_ctx);
+
+    std::cout << (int)framebuf[0] << " " << (int)framebuf[1] << " " << (int)framebuf[2] << std::endl;
+    cv::imshow("test", frames.back());
     
     return frames;
 }
@@ -160,13 +168,13 @@ cv::Mat coadd(const std::vector<cv::Mat> &frames) {
 
     const size_t nframes = frames.size();
     size_t current(0);
-    print_percent(current, nframes);
+    size_t previous(0);
 
     cv::Mat temp(m.rows, m.cols, CV_64FC3);
     for (auto fr : frames) {
         fr.convertTo(temp, CV_64FC3);
         m += temp;
-        print_percent(current++, nframes);
+        print_percent(current++, previous, nframes);
     }
 
     std::cout << "Dividing..." << std::flush;
