@@ -104,12 +104,11 @@ std::vector<cv::Mat> extract_frames(const std::string &video) {
     avcodec_open2(inav_ctx, in_codec, NULL);                        // Open the input codec
 
     std::vector<uint8_t> framebuf(avpicture_get_size(inav_ctx->pix_fmt, inav_ctx->width, inav_ctx->height));
-    avpicture_fill(reinterpret_cast<AVPicture*>(frame), framebuf.data(), AV_PIX_FMT_BGR24, inav_ctx->width, 
-                   inav_ctx->height);
                    
     struct SwsContext *img_convert_ctx;
     size_t nframes = informat_ctx->streams[video_stream]->nb_frames;
-    int current(0);
+    frames.reserve(nframes);
+    size_t current(0);
     while (ret == 0) {
         // Packet initialization
         AVPacket pkt;
@@ -128,13 +127,39 @@ std::vector<cv::Mat> extract_frames(const std::string &video) {
                                              SWS_BICUBIC, NULL, NULL, NULL);
             sws_scale(img_convert_ctx, decframe->data, decframe->linesize, 0, decframe->height, frame->data, frame->linesize);
             sws_freeContext(img_convert_ctx);
-                                                                     // Then create a new [cv::Mat] object
-//            cv::Mat _frame(frame->height, frame->width, CV_64FC3, framebuf.data(), frame->linesize[0]);
-//            frames.push_back(_frame);                                // And add it to the output vector
+
+            cv::Mat _frame(frame->height, frame->width, CV_64FC3, framebuf.data());
+            frames.push_back(_frame);                                // And add it to the output vector
         }
     }
     std::cout << std::endl;
     ret = avcodec_close(inav_ctx);
     
     return frames;
+}
+
+cv::Mat coadd(const std::vector<cv::Mat> &frames) {
+    if (frames.empty()) return cv::Mat();
+
+    std::cout << "In coadd:" << std::endl;
+
+    // Create a 0 initialized image to use as accumulator
+    cv::Mat m(frames[0].rows, frames[0].cols, CV_64FC3);
+    m.setTo(cv::Scalar(0, 0, 0, 0));
+
+    // Initialize output
+    cv::Mat out(m.rows, m.cols, CV_64FC3);
+
+    std::cout << "Accumulating..." << std::endl;
+
+    const size_t nframes = frames.size();
+    size_t current(0);
+    print_percent(current, nframes);
+
+
+    std::cout << "Dividing..." << std::flush;
+    m.convertTo(out, CV_16UC3, 1.0 / nframes);
+    std::cout << bright+green+"done"+res+"." << std::endl;
+
+    return out;
 }
