@@ -44,3 +44,4 @@ namespace po = boost::program_options;
 namespace fs = std::experimental::filesystem;
 
 std::vector<cv::Mat> extract_frames(const std::string &video);
+cv::Mat coadd(const std::vector<cv::Mat> &frames);

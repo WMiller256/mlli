@@ -43,6 +43,9 @@ int main(int argn, char** argv) {
 
     for (auto const &file : files) {
 	    std::vector<cv::Mat> frames = extract_frames(file);
+	    cv::Mat coadded = coadd(frames);
+	    cv::imshow("coadded", coadded);
+	    cv::waitKey();
 	}
 }
 
@@ -131,6 +134,9 @@ std::vector<cv::Mat> extract_frames(const std::string &video) {
             cv::Mat _frame(frame->height, frame->width, CV_64FC3, framebuf.data());
             frames.push_back(_frame);                                // And add it to the output vector
         }
+
+        // DEBUG
+        if (current > 1000) break;
     }
     std::cout << std::endl;
     ret = avcodec_close(inav_ctx);
@@ -156,6 +162,12 @@ cv::Mat coadd(const std::vector<cv::Mat> &frames) {
     size_t current(0);
     print_percent(current, nframes);
 
+    cv::Mat temp(m.rows, m.cols, CV_64FC3);
+    for (auto fr : frames) {
+        fr.convertTo(temp, CV_64FC3);
+        m += temp;
+        print_percent(current++, nframes);
+    }
 
     std::cout << "Dividing..." << std::flush;
     m.convertTo(out, CV_16UC3, 1.0 / nframes);
