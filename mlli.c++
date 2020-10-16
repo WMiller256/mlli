@@ -60,6 +60,7 @@ std::vector<cv::Mat> extract_frames(const std::string &video) {
     AVFrame* decframe = NULL;
     AVCodecContext* inav_ctx = NULL;
     AVCodec* in_codec = NULL;
+    AVStream* instream = NULL;
 
     int valid_frame = 0;
     int video_stream = -1;
@@ -97,19 +98,21 @@ std::vector<cv::Mat> extract_frames(const std::string &video) {
         exit(-1);
     }
 
-    in_codec = avcodec_find_decoder(informat_ctx->streams[video_stream]->codec->codec_id);
+    instream = informat_ctx->streams[video_stream];
+    in_codec = avcodec_find_decoder(instream->codec->codec_id);
     if (in_codec == NULL) {
-        std::cout << "Could not find codec: " << avcodec_get_name(informat_ctx->streams[video_stream]->codec->codec_id) << std::endl;
+        std::cout << "Could not find codec: " << avcodec_get_name(instream->codec->codec_id) << std::endl;
         exit(1);
     }
-    inav_ctx = informat_ctx->streams[video_stream]->codec;
+    else std::cout << "Detected codec: " << avcodec_get_name(instream->codec->codec_id) << std::endl;
+    inav_ctx = instream->codec;
 
     avcodec_open2(inav_ctx, in_codec, NULL);                        // Open the input codec
 
     std::vector<uint8_t> framebuf(avpicture_get_size(inav_ctx->pix_fmt, inav_ctx->width, inav_ctx->height));
                    
     struct SwsContext *img_convert_ctx;
-    size_t nframes = informat_ctx->streams[video_stream]->nb_frames;
+    size_t nframes = instream->nb_frames;
     frames.reserve(nframes);    // Minimize memcpy
     
     size_t current(0);
