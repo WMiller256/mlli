@@ -20,5 +20,6 @@
 const std::string backspace({8, 8, 8, 8});
 
 void print_percent(size_t current, size_t &previous, size_t total);
+void print_percent(size_t current, size_t total);
 std::string datetime();
 std::string type2str(int type);

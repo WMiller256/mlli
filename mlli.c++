@@ -105,13 +105,19 @@ std::vector<cv::Mat> extract_frames(const std::string &video) {
         exit(1);
     }
     else std::cout << "Detected codec: " << avcodec_get_name(instream->codec->codec_id) << std::endl;
+    std::cout << "File format:  " << informat_ctx->iformat->name << std::endl;
+    std::cout << "Pixel format: " << av_get_pix_fmt_name(instream->codec->pix_fmt) << std::endl;
     inav_ctx = instream->codec;
 
-    avcodec_open2(inav_ctx, in_codec, NULL);                        // Open the input codec
+    // Open the input codec
+    avcodec_open2(inav_ctx, in_codec, NULL);
 
+    // Allocate destination frame buffer
     std::vector<uint8_t> framebuf(avpicture_get_size(inav_ctx->pix_fmt, inav_ctx->width, inav_ctx->height));
+    avpicture_fill(reinterpret_cast<AVPicture*>(frame), framebuf.data(), AV_PIX_FMT_BGR24, instream->codec->width, instream->codec->height);
                    
-    struct SwsContext *img_convert_ctx;
+    SwsContext* swsctx = sws_getContext(inav_ctx->width, inav_ctx->height, instream->codec->pix_fmt, inav_ctx->width, 
+                                        inav_ctx->height, AV_PIX_FMT_BGR24, SWS_BICUBIC, NULL, NULL, NULL);
     size_t nframes = instream->nb_frames;
     frames.reserve(nframes);    // Minimize memcpy
     
@@ -128,37 +134,35 @@ std::vector<cv::Mat> extract_frames(const std::string &video) {
         // Print progress
         print_percent(current++, previous, nframes);
 
-        ret = av_read_frame(informat_ctx, &pkt);                     // Read the next frame in
-        avcodec_decode_video2(inav_ctx, frame, &valid_frame, &pkt);  // Decode the next frame
-        if (!valid_frame) continue;                                  // Ignore invalid frames
+        ret = av_read_frame(informat_ctx, &pkt);
+        avcodec_decode_video2(instream->codec, decframe, &valid_frame, &pkt);
+
+        // Ignore invalid frames
+        if (!valid_frame) continue;
 
         // Frame extraction
         if (ret == 0) {                                              
-            img_convert_ctx = sws_getContext(inav_ctx->width, inav_ctx->height, AV_PIX_FMT_BGR24, inav_ctx->width, inav_ctx->height, AV_PIX_FMT_BGR24, 
-                                             SWS_BICUBIC, NULL, NULL, NULL);
-            sws_scale(img_convert_ctx, decframe->data, decframe->linesize, 0, decframe->height, frame->data, frame->linesize);
-            sws_freeContext(img_convert_ctx);
+            sws_scale(swsctx, decframe->data, decframe->linesize, 0, decframe->height, frame->data, frame->linesize);
 
-            cv::Mat _frame(frame->height, frame->width, CV_64FC3, framebuf.data(), 24);
-            frames.push_back(_frame);                                // And add it to the output vector
+            // Convert the decoded frame into a cv::Mat
+            cv::Mat _frame(decframe->height, decframe->width, CV_8UC3, framebuf.data());
+            frames.push_back(_frame.clone());   // Have to use .clone() otherwise each element in [frames] will reference the same object
         }
-
-        // DEBUG
-//        if (current > 1000) break;
     }
-    std::cout << std::endl;
-    ret = avcodec_close(inav_ctx);
+    print_percent(nframes-1, nframes);
 
-    std::cout << (int)framebuf[0] << " " << (int)framebuf[1] << " " << (int)framebuf[2] << std::endl;
-    cv::imshow("test", frames.back());
-    
+    // Free memory and close streams
+    av_frame_free(&decframe);
+    av_frame_free(&frame);
+    sws_freeContext(swsctx);
+    avcodec_close(inav_ctx);
+    avformat_close_input(&informat_ctx);
+
     return frames;
 }
 
 cv::Mat coadd(const std::vector<cv::Mat> &frames) {
     if (frames.empty()) return cv::Mat();
-
-    std::cout << "In coadd:" << std::endl;
 
     // Create a 0 initialized image to use as accumulator
     cv::Mat m(frames[0].rows, frames[0].cols, CV_64FC3);
@@ -179,9 +183,10 @@ cv::Mat coadd(const std::vector<cv::Mat> &frames) {
         m += temp;
         print_percent(current++, previous, nframes);
     }
+    print_percent(current-1, nframes);
 
     std::cout << "Dividing..." << std::flush;
-    m.convertTo(out, CV_16UC3, 1.0 / nframes);
+    m.convertTo(out, CV_8UC3, 1.0 / nframes);
     std::cout << bright+green+"done"+res+"." << std::endl;
 
     return out;
