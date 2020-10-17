@@ -43,5 +43,7 @@ extern "C" {
 namespace po = boost::program_options;
 namespace fs = std::experimental::filesystem;
 
-std::vector<cv::Mat> extract_frames(const std::string &video);
+std::vector<cv::Mat> extract_frames(const std::string &video, float const &superres);
+
 cv::Mat coadd(const std::vector<cv::Mat> &frames);
+void unsharpMask(cv::Mat &original, unsigned int scale, double const &sigma, double const &thresh=0);

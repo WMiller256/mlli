@@ -12,12 +12,14 @@
 int main(int argn, char** argv) {
     std::vector<std::string> files;
     size_t nframes;
+    float superres;
 
    	po::options_description description("Usage");
 	try {
 		description.add_options()
 			("videos,v", po::value<std::vector<std::string>>()->multitoken(), "The input video files. (Required)")
 			("nframes,n", po::value<size_t>(&nframes)->default_value(-1), "The number of frames to combine. Defaults to 50% of total. (Optional)")
+			("superres,s", po::value<float>(&superres)->default_value(2.3), "The scale factor to apply in super-resolution generation. (Optional)")
 		;
 	}
 	catch (...) {
@@ -42,15 +44,18 @@ int main(int argn, char** argv) {
 	}
 
     for (auto const &file : files) {
-	    std::vector<cv::Mat> frames = extract_frames(file);
+	    std::vector<cv::Mat> frames = extract_frames(file, superres);
 	    cv::Mat coadded = coadd(frames);
-	    cv::imshow("coadded", coadded);
+	    coadded.convertTo(coadded, CV_8UC3);
+        cv::imshow("coadded", coadded);
+	    unsharpMask(coadded, 1, 12);
+	    cv::imshow("masked", coadded);
 	    cv::waitKey();
 	}
 }
 
 
-std::vector<cv::Mat> extract_frames(const std::string &video) {
+std::vector<cv::Mat> extract_frames(const std::string &video, float const &superres) {
 
     std::vector<cv::Mat> frames;
 
@@ -144,9 +149,12 @@ std::vector<cv::Mat> extract_frames(const std::string &video) {
         if (ret == 0) {                                              
             sws_scale(swsctx, decframe->data, decframe->linesize, 0, decframe->height, frame->data, frame->linesize);
 
-            // Convert the decoded frame into a cv::Mat
+            // Convert the decoded frame into a cv::Mat TODO: type deduction for different input pixelformats
             cv::Mat _frame(decframe->height, decframe->width, CV_8UC3, framebuf.data());
-            frames.push_back(_frame.clone());   // Have to use .clone() otherwise each element in [frames] will reference the same object
+            cv::Mat resized;
+            cv::resize(_frame, resized, cv::Size(decframe->width*superres, decframe->height*superres), 0, 0, cv::INTER_LANCZOS4);
+            
+            frames.push_back(resized);   // Have to use .clone() otherwise each element in [frames] will reference the same object
         }
     }
     print_percent(nframes-1, nframes);
@@ -186,8 +194,33 @@ cv::Mat coadd(const std::vector<cv::Mat> &frames) {
     print_percent(current-1, nframes);
 
     std::cout << "Dividing..." << std::flush;
-    m.convertTo(out, CV_8UC3, 1.0 / nframes);
+    m.convertTo(out, CV_64FC3, 1.0 / nframes);
     std::cout << bright+green+"done"+res+"." << std::endl;
 
     return out;
+}
+
+void unsharpMask(cv::Mat &original, unsigned int scale, double const &sigma, double const &thresh) {
+
+    // Convert original image to CV_64FC3
+    cv::Mat _original(original.rows, original.cols, CV_64FC3);
+    original.convertTo(_original, CV_64FC3);
+
+    // Create Gaussian-blurred image with square kernel of size [scale, scale]
+    if (scale % 2 == 0) scale += 1;     // Scale has to be odd
+    cv::Mat blurred(original.rows, original.cols, CV_64FC3);
+    cv::GaussianBlur(_original, blurred, cv::Size(scale, scale), sigma);
+
+    cv::Mat masked(original.rows, original.cols, CV_64FC3);
+
+    // Apply the unsharp masking
+    masked = _original + (2 * (sigma / 100.0) * (_original - blurred));
+
+    // Filter out negative values
+    double* m = masked.ptr<double>(0, 0);
+    for (size_t idx = 0; idx < masked.total(); idx++, m++) {
+        if (*m < 0) *m = 0;
+    }
+
+    masked.convertTo(original, CV_8UC3);
 }
