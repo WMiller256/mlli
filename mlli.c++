@@ -46,11 +46,9 @@ int main(int argn, char** argv) {
     for (auto const &file : files) {
 	    std::vector<cv::Mat> frames = extract_frames(file, superres);
 	    cv::Mat coadded = coadd(frames);
-	    coadded.convertTo(coadded, CV_8UC3);
-        cv::imshow("coadded", coadded);
-	    unsharpMask(coadded, 1, 12);
-	    cv::imshow("masked", coadded);
-	    cv::waitKey();
+	    coadded = unsharpMask(coadded, 10, 4);
+	    coadded.convertTo(coadded, CV_16UC3, 256);
+	    cv::imwrite("sharp.tif", coadded);
 	}
 }
 
@@ -131,7 +129,6 @@ std::vector<cv::Mat> extract_frames(const std::string &video, float const &super
 
     // Packet initialization
     AVPacket pkt;
-    av_init_packet(&pkt);
 
     // Parsing loop
     while (ret == 0) {
@@ -200,21 +197,18 @@ cv::Mat coadd(const std::vector<cv::Mat> &frames) {
     return out;
 }
 
-void unsharpMask(cv::Mat &original, unsigned int scale, double const &sigma, double const &thresh) {
+cv::Mat unsharpMask(cv::Mat original, double const &scale, double const &sigma, double const &thresh) {
 
     // Convert original image to CV_64FC3
-    cv::Mat _original(original.rows, original.cols, CV_64FC3);
-    original.convertTo(_original, CV_64FC3);
+    original.convertTo(original, CV_64FC3);
 
     // Create Gaussian-blurred image with square kernel of size [scale, scale]
-    if (scale % 2 == 0) scale += 1;     // Scale has to be odd
     cv::Mat blurred(original.rows, original.cols, CV_64FC3);
-    cv::GaussianBlur(_original, blurred, cv::Size(scale, scale), sigma);
-
-    cv::Mat masked(original.rows, original.cols, CV_64FC3);
+    cv::GaussianBlur(original, blurred, cv::Size(0, 0), sigma);
 
     // Apply the unsharp masking
-    masked = _original + (2 * (sigma / 100.0) * (_original - blurred));
+    cv::Mat masked(original.rows, original.cols, CV_64FC3);
+    masked = original + (2 * scale * (original - blurred));
 
     // Filter out negative values
     double* m = masked.ptr<double>(0, 0);
@@ -222,5 +216,5 @@ void unsharpMask(cv::Mat &original, unsigned int scale, double const &sigma, dou
         if (*m < 0) *m = 0;
     }
 
-    masked.convertTo(original, CV_8UC3);
+    return masked;
 }
